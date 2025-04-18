@@ -2,6 +2,7 @@ import click
 import pytest
 
 from globus_cli.parsing.param_types.guest_activity_notify_param import (
+    GCSGuestActivityNotificationParamType,
     TransferGuestActivityNotificationParamType,
 )
 
@@ -198,3 +199,53 @@ activity_notifications.status={expected["status"]}
 activity_notifications.transfer_use={expected["transfer_use"]}
 """
     )
+
+
+@pytest.mark.parametrize(
+    "incomplete_value, expected_completions",
+    (
+        ("", {"all", "destination", "failed", "source", "succeeded"}),
+        ("a", {"all"}),
+        ("al", {"all"}),
+        ("all", {"all"}),
+        ("dest", {"destination"}),
+        ("destination", {"destination"}),
+        ("s", {"source", "succeeded"}),
+        ("so", {"source"}),
+        ("su", {"succeeded"}),
+        ("destination,succ", {"destination,succeeded"}),
+        ("destination,succeeded", {"destination,succeeded"}),
+        (
+            "succeeded,",
+            {"succeeded,destination", "succeeded,failed", "succeeded,source"},
+        ),
+        (
+            ",,succeeded,",
+            {"succeeded,destination", "succeeded,failed", "succeeded,source"},
+        ),
+        (",,succeeded,,f", {"succeeded,failed"}),
+        (",", {"destination", "failed", "source", "succeeded"}),
+        (
+            "succeeded,failed,destination,source,",
+            {"succeeded,failed,destination,source"},
+        ),
+        (",,,succeeded,,,,failed,source,", {"succeeded,failed,source,destination"}),
+        ("succeeded,UNKNOWN", {"succeeded,UNKNOWN"}),
+        (",,succeeded,UNKNOWN", {"succeeded,UNKNOWN"}),
+    ),
+)
+def test_notify_shell_complete(runner, incomplete_value, expected_completions):
+    param_type = GCSGuestActivityNotificationParamType()
+    param = click.Option(["--activity-notifications"], type=param_type)
+    completions = param_type.shell_complete(
+        click.Context(activity_notifications_cmd), param, incomplete_value
+    )
+    got_values = {c.value for c in completions}
+    assert got_values == expected_completions
+
+
+def test_notify_metavar_in_help(runner):
+    # running `--help` should show the custom metavar for `--notify`
+    result = runner.invoke(activity_notifications_cmd, ["--help"])
+    assert result.exit_code == 0
+    assert "{all,succeeded,failed,source,destination}" in result.output

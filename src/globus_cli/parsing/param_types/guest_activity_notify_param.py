@@ -1,4 +1,5 @@
 import click
+from click.shell_completion import CompletionItem
 
 from globus_cli.constants import ExplicitNullType
 
@@ -76,6 +77,70 @@ class GCSGuestActivityNotificationParamType(click.ParamType):
             policy[k] = sorted(v)
 
         return policy
+
+    def shell_complete(
+        self, ctx: click.Context, param: click.Parameter, incomplete: str
+    ) -> list[CompletionItem]:
+        all_compoundable_options = ["destination", "failed", "source", "succeeded"]
+
+        all_options = ["all"] + all_compoundable_options
+
+        # if the caller used `--activity_notifications <TAB>`, show all options
+        # if the caller used `--activity_notification s<TAB>`, show `source` and
+        # `succeeded` the logic below assumes there were commas
+        if "," not in incomplete:
+            return [CompletionItem(o) for o in all_options if o.startswith(incomplete)]
+
+        # grab the last partial name from the list
+        # e.g. if the caller used `--activity-notifications source,succ<TAB>`, then
+        #      collect `succ` as the last incomplete fragment
+        #
+        # also collect the valid completed parts for comparisons
+        *already_contains, last_incomplete_fragment = incomplete.split(",")
+
+        # trim out empty strings; this will be reassembled later into the completed
+        # option and this removal will help result in translating `failed,,source`
+        # into `failed,source`
+        already_contains = [s for s in already_contains if s != ""]
+
+        # for possible options to complete, remove the set of already completed values
+        #
+        # e.g. `--acrivity-notifications failed,f<TAB>` will offer no completion, since
+        # `failed` was already used
+        # this also means that `--activity-notifications source,<TAB>` will offer
+        # `destination`, `failed`, and `succeeded` but not `source`.
+        #
+        # convert to a sorted list in case completion behavior is order-sensitive
+        possible_options = sorted(set(all_compoundable_options) - set(already_contains))
+
+        # now limit those options to those which start with the last fragment
+        #
+        # if the option was complete, it may be considered the only possible option
+        # i.e. `--activity-notifiations failed,succeeded,source,destination<TAB>`
+        # indicates valid usage
+        #
+        # if the option was blank, as in `--activity-notifications source,<TAB>`, then
+        # last_incomplete_fragment is "" and this filter won't remove anything
+        possible_options = [
+            o for o in possible_options if o.startswith(last_incomplete_fragment)
+        ]
+
+        # if the list became empty, we trust that the user has input a value
+        # which has some meaning unknown to the completer
+        # e.g. `--activity-notifications succeeded,UNKNOWN`
+        if possible_options == []:
+            possible_options = [last_incomplete_fragment]
+
+        # handle a corner case!
+        #
+        # all options were used with a trailing comma:
+        #    --activity-notifications source,destination,failed,succeeded,
+        if possible_options == [""]:
+            return [CompletionItem(",".join(already_contains))]
+
+        return [
+            CompletionItem(",".join(already_contains + [o])) for o in possible_options
+        ]
 
 
 class TransferGuestActivityNotificationParamType(GCSGuestActivityNotificationParamType):
